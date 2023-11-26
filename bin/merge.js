@@ -4,7 +4,7 @@ const arg = require('arg')
 const debug = require('debug')('cypress-split')
 const globby = require('globby')
 const fs = require('fs')
-const { mergeSplitTimings } = require('../src/timings')
+const { hasTimeDifferences, mergeSplitTimings } = require('../src/timings')
 const ghCore = require('@actions/core')
 
 const label = 'cypress-split-merge'
@@ -14,6 +14,7 @@ const args = arg({
   '--parent-folder': String,
   '--output': String, // output filename to write
   '--set-gha-output': String, // output merged json string
+  '--threshold': Number,
   // aliases
   '-o': '--output',
 })
@@ -57,7 +58,38 @@ debug('merged timings has %d entries', merged.durations.length)
 debug(merged)
 
 const mergedText = JSON.stringify(merged, null, 2)
-if (args['--output']) {
+
+if (
+  args['--output'] &&
+  fs.existsSync(args['--output']) &&
+  args['--threshold']
+) {
+  debug('%s found existing timings file at %s', label, args['--output'])
+
+  const existingTimings = JSON.parse(fs.readFileSync(args['--output'], 'utf8'))
+  let splitThreshold = args['--threshold']
+
+  const hasUpdatedTimings = hasTimeDifferences(
+    existingTimings,
+    merged,
+    splitThreshold,
+  )
+  if (hasUpdatedTimings) {
+    console.log(
+      '%s found merged timing exceeding %d threshold',
+      label,
+      splitThreshold,
+    )
+    fs.writeFileSync(args['--output'], mergedText + '\n', 'utf8')
+    console.log('%s wrote merged timings into %s', label, args['--output'])
+  } else {
+    console.log(
+      '%s merged timings are within %d threshold, skipping update',
+      label,
+      splitThreshold,
+    )
+  }
+} else if (args['--output']) {
   fs.writeFileSync(args['--output'], mergedText + '\n', 'utf8')
   console.log('%s wrote merged timings into %s', label, args['--output'])
 } else {
